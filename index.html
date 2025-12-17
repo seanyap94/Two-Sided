@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PLL Trainer v4.8 - Ao5 Fix</title>
+    <style>
+        :root { --bg: #0a0a0a; --panel: #151515; --accent: #3498db; --text: #eee; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        #canvas-container { height: 42vh; min-height: 240px; background: #000; position: relative; flex-shrink: 0; cursor: pointer; border-bottom: 2px solid #333; }
+        
+        #control-hub { background: var(--panel); padding: 10px 15px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #333; }
+        #timer { font-size: 36px; font-family: monospace; color: #f1c40f; font-weight: bold; }
+        #buffer-view { font-size: 24px; font-weight: bold; color: var(--accent); min-width: 55px; text-align: center; background: rgba(52, 152, 219, 0.1); border-radius: 4px; padding: 2px; }
+        #pause-btn { background: #222; border: 1px solid #444; color: #eee; padding: 10px 18px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold; -webkit-tap-highlight-color: transparent; }
+        #pause-btn.paused { background: var(--accent); color: white; border-color: white; }
+
+        #main-content { flex-grow: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+        #status { font-size: 14px; color: #f1c40f; font-weight: bold; text-align: center; text-transform: uppercase; height: 20px; letter-spacing: 0.5px; }
+
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+        .grid button { padding: 16px 2px; font-size: 14px; background: #222; color: #999; border: 1px solid #333; border-radius: 6px; font-weight: bold; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        .grid button.matching { color: #fff; border-color: #666; }
+        .grid button.active-prefix { border-color: var(--accent); color: white; background: #1a2a3a; }
+        .grid button.correct { background: #2ecc71 !important; color: white; border-color: #2ecc71; }
+        .grid button.wrong { background: #e74c3c !important; color: white; border-color: #e74c3c; }
+        .grid button.correction { background: #f39c12 !important; color: white; border-color: #f39c12; }
+
+        .color-chips { display: flex; gap: 12px; justify-content: center; padding: 5px 0; }
+        .chip { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.1); opacity: 0.25; cursor: pointer; }
+        .chip.active { opacity: 1; border-color: white; transform: scale(1.1); }
+
+        #stats-wrapper { background: #111; border-radius: 8px; border: 1px solid #222; overflow-x: auto; margin-top: 5px; }
+        table { width: 100%; font-size: 11px; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #222; white-space: nowrap; }
+        tr.summary-row { background: #1a1a1a; font-weight: bold; color: var(--accent); }
+
+        @media (min-width: 900px) {
+            body { flex-direction: row; }
+            #canvas-container { height: 100vh; flex-grow: 1; }
+            #main-content { width: 440px; min-width: 440px; height: 100vh; border-left: 2px solid #333; }
+            .grid { grid-template-columns: repeat(3, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="main-content">
+        <div id="status">PRESS SPACE OR TAP CUBE</div>
+        
+        <div id="control-hub">
+            <button id="pause-btn">PAUSE</button>
+            <div id="timer">0.00</div>
+            <div id="buffer-view">_</div>
+        </div>
+
+        <div class="grid" id="button-grid"></div>
+
+        <div class="color-chips" id="color-selector">
+            <div class="chip" style="background:#fff" data-color="white"></div>
+            <div class="chip" style="background:#ff0" data-color="yellow"></div>
+            <div class="chip" style="background:#b71234" data-color="red"></div>
+            <div class="chip" style="background:#ff5800" data-color="orange"></div>
+            <div class="chip" style="background:#009b48" data-color="green"></div>
+            <div class="chip" style="background:#0046ad" data-color="blue"></div>
+        </div>
+
+        <div id="stats-wrapper">
+            <table id="stats-table">
+                <thead id="stats-head"><tr><th>PLL</th><th>Seen</th><th>Mean</th></tr></thead>
+                <tbody id="stats-body"></tbody>
+            </table>
+            <div style="text-align:center; padding: 12px;"><button id="clear-stats" style="background:none; border:none; color:#555; font-size:10px; text-decoration:underline; cursor:pointer;">RESET ALL DATA</button></div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/examples/jsm/controls/OrbitControls": "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+
+        const PLL_ALGS = {
+            "Aa": "x R' U R' D2 R U' R' D2 R2 x'", "Ab": "x R2 D2 R U R' D2 R U' R x'", "E": "x' R U' R' D R U R' D' R U R' D R U' R' D' x",
+            "F": "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R", "Ga": "R2 u R' U R' U' R u' R2 y' R' U R", "Gb": "R' U' R y R2 u R' U R U' R u' R2",
+            "Gc": "R2 u' R U' R U R' u R2 y R U' R'", "Gd": "R U R' y' R2 u' R U' R' U R' u R2", "H": "M2 U M2 U2 M2 U M2",
+            "Ja": "R' U L' U2 R U' R' U2 R L", "Jb": "R U R' F' R U R' U' R' F R2 U' R'", 
+            "Na": "R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'", "Nb": "R' U L' U2 R U' L R' U L' U2 R U' L U", 
+            "Ra": "R U' R' U' R U R D R' U' R D' R' U2 R' U'", "Rb": "R2 F R U R U' R' F' R U2 R' U2 R",
+            "T": "R U R' U' R' F R2 U' R' U' R U R' F'", "Ua": "M2 U M U2 M' U M2", "Ub": "M2 U' M U2 M' U' M2",
+            "V": "R' U R' d' R' F' R2 U' R' U R' F R F", "Y": "F R U' R' U' R U R' F' R U R' U' R' F R F'", "Z": "M2 U M2 U M' U2 M2 U2 M'"
+        };
+
+        // Logic & Stats Fix
+        let session = JSON.parse(localStorage.getItem('pll_v4_session')) || {};
+        let allTimes = JSON.parse(localStorage.getItem('pll_v4_alltimes')) || [];
+        const initSession = () => Object.keys(PLL_ALGS).forEach(k => { if (!session[k]) session[k] = { correct: 0, seen: 0, times: [] }; });
+        initSession();
+        const saveSession = () => { localStorage.setItem('pll_v4_session', JSON.stringify(session)); localStorage.setItem('pll_v4_alltimes', JSON.stringify(allTimes)); };
+        
+        function calcAoX(times, n) {
+            if (!times || times.length < n) return "-";
+            const subset = times.slice(-n).sort((a, b) => a - b);
+            const trim = Math.max(1, Math.floor(n * 0.05));
+            const counting = subset.slice(trim, -trim);
+            if (counting.length === 0) return "-";
+            const sum = counting.reduce((a, b) => a + b, 0);
+            return (sum / counting.length).toFixed(2);
+        }
+
+        const updateTable = () => {
+            const milestones = [5, 12, 50, 100];
+            const activeMilestones = milestones.filter(m => allTimes.length >= m);
+            let h = `<tr><th>PLL</th><th>Seen</th><th>Mean</th>`;
+            activeMilestones.forEach(m => h += `<th>Ao${m}</th>`);
+            document.getElementById('stats-head').innerHTML = h + `</tr>`;
+
+            const renderRow = (label, times, seen, isSum = false) => {
+                let mean = times.length > 0 ? (times.reduce((a,b)=>a+b,0)/times.length).toFixed(2) : "-";
+                let r = `<tr class="${isSum?'summary-row':''}"><td>${label}</td><td>${seen}</td><td>${mean}</td>`;
+                activeMilestones.forEach(m => r += `<td>${calcAoX(times, m)}</td>`);
+                return r + `</tr>`;
+            };
+            let b = renderRow("SESSION", allTimes, allTimes.length, true);
+            Object.keys(session).sort().forEach(k => { if(session[k].seen > 0) b += renderRow(k, session[k].times, session[k].seen); });
+            document.getElementById('stats-body').innerHTML = b;
+        };
+
+        // 3D Setup
+        const COLORS = { white: 0xFFFFFF, yellow: 0xFFFF00, red: 0xB71234, orange: 0xFF5800, green: 0x009B48, blue: 0x0046AD };
+        const OPPOSITES = { white: 'yellow', yellow: 'white', red: 'orange', orange: 'red', green: 'blue', blue: 'green' };
+        const ORIENT_TO_TOP = { white: "", yellow: "x2", green: "x'", blue: "x", red: "z", orange: "z'" };
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(0,0,0,0, 1, 1000);
+        camera.position.set(10, 8, 10);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        function updateCamera() {
+            const c = document.getElementById('canvas-container');
+            const aspect = c.clientWidth / c.clientHeight;
+            camera.left = -5 * aspect; camera.right = 5 * aspect;
+            camera.top = 5; camera.bottom = -5;
+            camera.updateProjectionMatrix();
+            renderer.setSize(c.clientWidth, c.clientHeight);
+        }
+        window.addEventListener('resize', updateCamera);
+
+        let cubeGroup, cubies = [];
+        function initCube() {
+            if(cubeGroup) scene.remove(cubeGroup);
+            cubeGroup = new THREE.Group(); scene.add(cubeGroup);
+            cubies = [];
+            const geom = new THREE.BoxGeometry(0.92, 0.92, 0.92);
+            for (let x = -1; x <= 1; x++) {
+                for (let y = -1; y <= 1; y++) {
+                    for (let z = -1; z <= 1; z++) {
+                        const mats = Array(6).fill().map(() => new THREE.MeshBasicMaterial({ color: 0x111111 }));
+                        if (x === 1) mats[0].color.setHex(COLORS.green); if (x === -1) mats[1].color.setHex(COLORS.blue);
+                        if (y === 1) mats[2].color.setHex(COLORS.white); if (y === -1) mats[3].color.setHex(COLORS.yellow);
+                        if (z === 1) mats[4].color.setHex(COLORS.red); if (z === -1) mats[5].color.setHex(COLORS.orange);
+                        const mesh = new THREE.Mesh(geom, mats); mesh.position.set(x, y, z);
+                        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geom), new THREE.LineBasicMaterial({ color: 0x000000 })));
+                        cubeGroup.add(mesh); cubies.push(mesh);
+                    }
+                }
+            }
+        }
+
+        const MOVE_MAP = {
+            'U': {a:'y', v:1, d:-1}, 'D': {a:'y', v:-1, d:1}, 'R': {a:'x', v:1, d:-1}, 'L': {a:'x', v:-1, d:1}, 'F': {a:'z', v:1, d:-1}, 'B': {a:'z', v:-1, d:1},
+            'u': {a:'y', v:[0,1], d:-1}, 'd': {a:'y', v:[0,-1], d:1}, 'r': {a:'x', v:[0,1], d:-1}, 'l': {a:'x', v:[0,-1], d:1}, 'f': {a:'z', v:[0,1], d:-1}, 'b': {a:'z', v:[0,-1], d:1},
+            'M': {a:'x', v:0, d:1}, 'x': {a:'x', v:'all', d:-1}, 'y': {a:'y', v:'all', d:-1}, 'z': {a:'z', v:'all', d:-1}
+        };
+
+        async function applyAlgo(str) {
+            if(!str) return;
+            for (let t of str.split(/\s+/)) {
+                if (!t) continue;
+                let data = MOVE_MAP[t[0]]; if (!data) continue;
+                let d = t.includes("'") ? -data.d : data.d;
+                const pivot = new THREE.Group(); scene.add(pivot);
+                const moving = cubies.filter(c => {
+                    const wp = new THREE.Vector3(); c.getWorldPosition(wp);
+                    const coord = Math.round(wp[data.a]);
+                    return (data.v === 'all') ? true : (Array.isArray(data.v) ? data.v.includes(coord) : coord === data.v);
+                });
+                moving.forEach(c => pivot.attach(c));
+                pivot.rotation[data.a] = (Math.PI/2) * d * (t.includes("2") ? 2 : 1);
+                moving.forEach(c => cubeGroup.attach(c));
+                scene.remove(pivot);
+                cubies.forEach(c => c.position.set(Math.round(c.position.x), Math.round(c.position.y), Math.round(c.position.z)));
+            }
+        }
+
+        let startTime, currentCase, timerInt = null, isWaiting = true, inputBuffer = "", isPaused = false;
+        let activeCrosses = ['white'];
+
+        function handleMainAction() {
+            if (isPaused) { togglePause(); return; }
+            if (isWaiting) { start(); return; }
+        }
+
+        function togglePause() {
+            if (isWaiting) return;
+            isPaused = !isPaused;
+            const pBtn = document.getElementById('pause-btn');
+            if (isPaused) {
+                clearInterval(timerInt);
+                pBtn.innerText = "RESUME"; pBtn.classList.add('paused');
+                document.getElementById('status').innerText = "PAUSED - PRESS SPACE";
+            } else {
+                startTime = Date.now() - (parseFloat(document.getElementById('timer').innerText) * 1000);
+                timerInt = setInterval(() => { document.getElementById('timer').innerText = ((Date.now() - startTime) / 1000).toFixed(2); }, 10);
+                pBtn.innerText = "PAUSE"; pBtn.classList.remove('paused');
+                document.getElementById('status').innerText = "SOLVING...";
+            }
+        }
+
+        async function start() {
+            if(timerInt) clearInterval(timerInt);
+            isPaused = false; isWaiting = false; inputBuffer = "";
+            document.getElementById('pause-btn').innerText = "PAUSE";
+            document.getElementById('pause-btn').classList.remove('paused');
+            updateBufferDisplay();
+            initCube();
+            currentCase = Object.keys(PLL_ALGS)[Math.floor(Math.random() * 21)];
+            session[currentCase].seen++; saveSession();
+            const cross = activeCrosses[Math.floor(Math.random() * activeCrosses.length)];
+            await applyAlgo(ORIENT_TO_TOP[OPPOSITES[cross]]); 
+            const inv = PLL_ALGS[currentCase].replace(/[()]/g, '').trim().split(/\s+/).reverse().map(m => 
+                m.endsWith("2") ? m : (m.endsWith("'") ? m.slice(0, -1) : m + "'")).join(" ");
+            await applyAlgo(inv);
+            for(let i=0; i < Math.floor(Math.random()*4); i++) await applyAlgo("y");
+            
+            document.querySelectorAll('#button-grid button').forEach(b => b.className = '');
+            document.getElementById('status').innerText = "CROSS: " + cross.toUpperCase();
+            startTime = Date.now();
+            timerInt = setInterval(() => { document.getElementById('timer').innerText = ((Date.now() - startTime) / 1000).toFixed(2); }, 10);
+        }
+
+        function submit(guess) {
+            if (isWaiting || isPaused) return;
+            clearInterval(timerInt);
+            const elapsed = (Date.now() - startTime) / 1000;
+            const correctBtn = Array.from(document.querySelectorAll('#button-grid button')).find(b => b.innerText === currentCase);
+            const guessBtn = Array.from(document.querySelectorAll('#button-grid button')).find(b => b.innerText === guess);
+            
+            if (guess === currentCase) {
+                if(guessBtn) guessBtn.className = 'correct';
+                session[currentCase].correct++; session[currentCase].times.push(elapsed); allTimes.push(elapsed);
+                document.getElementById('status').innerText = "CORRECT!";
+                isWaiting = true;
+                setTimeout(() => { if(isWaiting) start(); }, 500);
+            } else {
+                if(guessBtn) guessBtn.className = 'wrong';
+                if(correctBtn) correctBtn.className = 'correction';
+                document.getElementById('status').innerText = `FAIL: ${currentCase} (SPACE/TAP NEXT)`;
+                isWaiting = true;
+            }
+            saveSession(); updateTable();
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') { e.preventDefault(); handleMainAction(); return; }
+            if (e.code === 'Escape') { e.preventDefault(); togglePause(); return; }
+            if (isWaiting || isPaused) return;
+            const char = (inputBuffer === "" ? e.key.toUpperCase() : e.key.toLowerCase());
+            let tb = inputBuffer + char;
+            if (PLL_ALGS[tb]) submit(tb);
+            else if (Object.keys(PLL_ALGS).some(k => k.startsWith(tb))) { inputBuffer = tb; updateBufferDisplay(); }
+            else if (Object.keys(PLL_ALGS).some(k => k.startsWith(e.key.toUpperCase()))) { inputBuffer = e.key.toUpperCase(); updateBufferDisplay(); }
+        });
+
+        const updateBufferDisplay = () => {
+            document.getElementById('buffer-view').innerText = inputBuffer || "_";
+            document.querySelectorAll('#button-grid button').forEach(btn => {
+                btn.classList.toggle('matching', inputBuffer === "" || btn.innerText.startsWith(inputBuffer));
+                btn.classList.toggle('active-prefix', inputBuffer !== "" && btn.innerText.startsWith(inputBuffer));
+            });
+        };
+
+        Object.keys(PLL_ALGS).sort().forEach(name => {
+            const b = document.createElement('button'); b.innerText = name;
+            b.onclick = () => { if(!isWaiting && !isPaused) submit(name); };
+            document.getElementById('button-grid').appendChild(b);
+        });
+
+        document.querySelectorAll('.chip').forEach(chip => {
+            if(activeCrosses.includes(chip.dataset.color)) chip.classList.add('active');
+            chip.onclick = () => {
+                const c = chip.dataset.color;
+                if(activeCrosses.includes(c) && activeCrosses.length > 1) { activeCrosses = activeCrosses.filter(x => x !== c); chip.classList.remove('active'); }
+                else if(!activeCrosses.includes(c)) { activeCrosses.push(c); chip.classList.add('active'); }
+            };
+        });
+
+        document.getElementById('pause-btn').onclick = (e) => { e.stopPropagation(); togglePause(); };
+        document.getElementById('canvas-container').onclick = () => { handleMainAction(); };
+        document.getElementById('clear-stats').onclick = () => { if(confirm("Clear All Stats?")) { session = {}; allTimes = []; initSession(); saveSession(); updateTable(); } };
+
+        updateCamera(); initCube(); updateTable();
+        function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); }
+        loop();
+    </script>
+</body>
+</html>
