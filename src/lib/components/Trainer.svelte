@@ -1408,7 +1408,7 @@
 
 <style>
     .trainer-container {
-        height: 100%;
+        height: calc(100dvh - 60px);
         display: flex;
         flex-direction: column;
     }

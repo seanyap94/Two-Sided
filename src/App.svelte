@@ -40,7 +40,7 @@
 <style>
   main {
     padding-top: 60px; /* Space for NavBar */
-    height: calc(100vh - 60px);
-    overflow: hidden;
+    min-height: calc(100vh - 60px); /* Use min-height to allow growth */
+    /* overflow: hidden; Removed to allow scrolling */
   }
 </style>

@@ -305,7 +305,8 @@
     color: #eee;
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: calc(100vh - 60px); /* Fill remaining space exactly */
+    overflow: hidden; /* Prevent container scroll, force inner scroll */
     gap: 2rem;
   }
   .header {
