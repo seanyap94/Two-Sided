@@ -25,6 +25,7 @@ const macAddressRequest = $state({
 });
 
 let history = $state([] as { move: string; counter: number }[]);
+let lastMoveTime = $state(0);
 
 // Move subscribers map (id -> { callback, priority })
 const moveSubscribers = new Map<string, MoveSubscriber>();
@@ -124,26 +125,19 @@ export const bluetoothState = {
 	},
 	handleCubeCallback(newFacelet: string, prevMoves: string[]) {
 		facelet = newFacelet;
-
-		// Filter out empty moves from the cube's internal history
 		const incomingMoves = prevMoves.filter(m => m && m.trim().length > 0);
-		if (incomingMoves.length > 0) {
-			// incomingMoves is [newest, ..., oldest]
-			const lastSeenMoves = history.slice(-10).map(h => h.move).reverse(); // recent history, newest first
 
+		if (incomingMoves.length > 0) {
+			// Deduplication Logic (Existing)
+			const lastSeenMoves = history.slice(-10).map(h => h.move).reverse();
 			let newMovesCount = 0;
 			if (lastSeenMoves.length === 0) {
-				// If history is empty, take all moves from the current packet
 				newMovesCount = incomingMoves.length;
 			} else {
-				// Find the smallest offset i such that the suffix incomingMoves.slice(i) 
-				// matches the beginning of lastSeenMoves.
 				let matchIdx = -1;
 				for (let i = 0; i <= incomingMoves.length; i++) {
-					// Suffix of incomingMoves starting at i
 					const suffixLen = incomingMoves.length - i;
 					if (suffixLen > lastSeenMoves.length) continue;
-
 					let isMatch = true;
 					for (let j = 0; j < suffixLen; j++) {
 						if (incomingMoves[i + j] !== lastSeenMoves[j]) {
@@ -159,26 +153,51 @@ export const bluetoothState = {
 				newMovesCount = matchIdx === -1 ? incomingMoves.length : matchIdx;
 			}
 
-			// Process new moves from oldest to newest
-			const dispatched: string[] = [];
+			// Processing and Dispatch
 			for (let i = newMovesCount - 1; i >= 0; i--) {
 				const move = incomingMoves[i];
+				const now = Date.now();
+
+				// 1. Dispatch the primary move
 				lastMove = move;
 				moveCounter++;
 				history.push({ move, counter: moveCounter });
 				if (history.length > 100) history.shift();
-				dispatched.push(move);
 
-				// Dispatch move to subscribers
 				if (moveSubscribers.size > 0) {
 					const subs = Array.from(moveSubscribers.values()).sort((a, b) => b.priority - a.priority);
-					for (const s of subs) {
-						s.callback(move);
+					subs.forEach(s => s.callback(move));
+				}
+
+				// 2. Check for Slice/Rotation Logic
+				// Limit to 75ms for "simultaneous" detection
+				if (history.length >= 2 && (now - lastMoveTime < 75)) {
+					// Get the *previous* move. Since we just pushed 'move', it's history[len-2]
+					const prev = history[history.length - 2].move;
+
+					let rotation = "";
+
+					// M' = R' L x
+					// M = R L' x'
+					// M2 = R2 L2 x2
+
+					const isR_L_Pair = (m1: string, m2: string, r1: string, l1: string) =>
+						(m1 === r1 && m2 === l1) || (m1 === l1 && m2 === r1);
+
+					if (isR_L_Pair(prev, move, "R'", "L")) rotation = "x";
+					else if (isR_L_Pair(prev, move, "R", "L'")) rotation = "x'";
+					else if (isR_L_Pair(prev, move, "R2", "L2")) rotation = "x2";
+
+					if (rotation) {
+						console.log(`[Store] Detected Slice Pair (${prev}, ${move}) -> Injecting Rotation ${rotation}`);
+						if (moveSubscribers.size > 0) {
+							const subs = Array.from(moveSubscribers.values()).sort((a, b) => b.priority - a.priority);
+							subs.forEach(s => s.callback(rotation));
+						}
 					}
 				}
-			}
-			if (dispatched.length > 0) {
-				console.log(`[Store] Dispatched ${dispatched.length} moves: ${dispatched.join(', ')}`);
+
+				lastMoveTime = now;
 			}
 		}
 	},
