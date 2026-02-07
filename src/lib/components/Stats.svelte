@@ -50,6 +50,7 @@
 
   let sortCol = $state<"CASE" | "SEEN" | "CORRECT" | "MEAN" | "MOVES">("CASE");
   let sortDir = $state<1 | -1>(1);
+  let showHistory = $state(false);
 
   function toggleSort(col: typeof sortCol) {
     if (sortCol === col) {
@@ -145,6 +146,9 @@
         <option value="PLL_TIME_ATTACK">PLL Time Attack</option>
         <option value="F2L_TIME_ATTACK">F2L Time Attack</option>
       </select>
+      <button onclick={() => (showHistory = !showHistory)} class="toggle-btn"
+        >{showHistory ? "Show Stats" : "Show History"}</button
+      >
       <button
         class="back-btn"
         onclick={() => {
@@ -161,140 +165,145 @@
     </div>
   </div>
 
-  <div class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th class="sortable" onclick={() => toggleSort("CASE")}
-            >Case {sortCol === "CASE" ? (sortDir === 1 ? "↑" : "↓") : ""}</th
-          >
-          <th class="sortable" onclick={() => toggleSort("SEEN")}
-            >Seen {sortCol === "SEEN" ? (sortDir === 1 ? "↑" : "↓") : ""}</th
-          >
-          <th class="sortable" onclick={() => toggleSort("CORRECT")}
-            >Correct {sortCol === "CORRECT"
-              ? sortDir === 1
-                ? "↑"
-                : "↓"
-              : ""}</th
-          >
-          <th class="sortable" onclick={() => toggleSort("MEAN")}
-            >Mean (Insp/Exec) {sortCol === "MEAN"
-              ? sortDir === 1
-                ? "↑"
-                : "↓"
-              : ""}</th
-          >
-          <th class="sortable" onclick={() => toggleSort("MOVES")}
-            >Avg Moves {sortCol === "MOVES"
-              ? sortDir === 1
-                ? "↑"
-                : "↓"
-              : ""}</th
-          >
-          {#each milestones as m}
-            <th>Ao{m}</th>
-          {/each}
-        </tr>
-      </thead>
-      <tbody>
-        {#if sessionKeys.length === 0}
-          <tr
-            ><td colspan={4 + milestones.length}>No stats for {selectedMode}</td
-            ></tr
-          >
-        {/if}
-        {#each sessionKeys as k}
-          {@const s = statsState.session[k]}
-          {@const meanTotal = getMean(s.times)}
-          {@const meanInsp = getMean(s.inspTimes || [])}
-          {@const meanExec = getMean(s.execTimes || [])}
+  {#if !showHistory}
+    <div class="table-wrapper">
+      <table>
+        <thead>
           <tr>
-            <td class="case-name"
-              >{k
-                .replace("PLL_", "")
-                .replace("OLL_", "")
-                .replace("F2L_", "")}</td
+            <th class="sortable" onclick={() => toggleSort("CASE")}
+              >Case {sortCol === "CASE" ? (sortDir === 1 ? "↑" : "↓") : ""}</th
             >
-            <td>{s.seen}</td>
-            <td>{s.correct}</td>
-            <td class="highlight">
-              {#if s.times.length > 0}
-                <small style="color: #666"
-                  >({meanInsp.toFixed(2)} / {meanExec.toFixed(2)})</small
-                >
-                {meanTotal.toFixed(2)}
-              {:else}
-                -
-              {/if}
-            </td>
-            <td>
-              {#if (s.moveCounts?.length || 0) > 0}
-                {getMean(s.moveCounts || []).toFixed(1)}
-              {:else}
-                -
-              {/if}
-            </td>
+            <th class="sortable" onclick={() => toggleSort("SEEN")}
+              >Seen {sortCol === "SEEN" ? (sortDir === 1 ? "↑" : "↓") : ""}</th
+            >
+            <th class="sortable" onclick={() => toggleSort("CORRECT")}
+              >Correct {sortCol === "CORRECT"
+                ? sortDir === 1
+                  ? "↑"
+                  : "↓"
+                : ""}</th
+            >
+            <th class="sortable" onclick={() => toggleSort("MEAN")}
+              >Mean (Insp/Exec) {sortCol === "MEAN"
+                ? sortDir === 1
+                  ? "↑"
+                  : "↓"
+                : ""}</th
+            >
+            <th class="sortable" onclick={() => toggleSort("MOVES")}
+              >Avg Moves {sortCol === "MOVES"
+                ? sortDir === 1
+                  ? "↑"
+                  : "↓"
+                : ""}</th
+            >
             {#each milestones as m}
-              <td>
-                {#if s.times.length >= m}
-                  {@const val = calcAoX(s.times, m, s.inspTimes, s.execTimes)}
-                  {#if val.includes("(")}
-                    {@const parts = val.split(" ")}
-                    <small style="color: #666"
-                      >{parts[0]} {parts[1]} {parts[2]}</small
-                    >
-                    {parts[3]}
-                  {:else}
-                    {val}
-                  {/if}
+              <th>Ao{m}</th>
+            {/each}
+          </tr>
+        </thead>
+        <tbody>
+          {#if sessionKeys.length === 0}
+            <tr
+              ><td colspan={4 + milestones.length}
+                >No stats for {selectedMode}</td
+              ></tr
+            >
+          {/if}
+          {#each sessionKeys as k}
+            {@const s = statsState.session[k]}
+            {@const meanTotal = getMean(s.times)}
+            {@const meanInsp = getMean(s.inspTimes || [])}
+            {@const meanExec = getMean(s.execTimes || [])}
+            <tr>
+              <td class="case-name"
+                >{k
+                  .replace("PLL_", "")
+                  .replace("OLL_", "")
+                  .replace("F2L_", "")}</td
+              >
+              <td>{s.seen}</td>
+              <td>{s.correct}</td>
+              <td class="highlight">
+                {#if s.times.length > 0}
+                  <small style="color: #666"
+                    >({meanInsp.toFixed(2)} / {meanExec.toFixed(2)})</small
+                  >
+                  {meanTotal.toFixed(2)}
                 {:else}
                   -
                 {/if}
               </td>
-            {/each}
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+              <td>
+                {#if (s.moveCounts?.length || 0) > 0}
+                  {getMean(s.moveCounts || []).toFixed(1)}
+                {:else}
+                  -
+                {/if}
+              </td>
+              {#each milestones as m}
+                <td>
+                  {#if s.times.length >= m}
+                    {@const val = calcAoX(s.times, m, s.inspTimes, s.execTimes)}
+                    {#if val.includes("(")}
+                      {@const parts = val.split(" ")}
+                      <small style="color: #666"
+                        >{parts[0]} {parts[1]} {parts[2]}</small
+                      >
+                      {parts[3]}
+                    {:else}
+                      {val}
+                    {/if}
+                  {:else}
+                    -
+                  {/if}
+                </td>
+              {/each}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
 
-  <div class="history-list">
-    <h3>Recent History ({selectedMode})</h3>
-    <ul>
-      {#each filteredHistory as h}
-        <li class:fail={h.result === "FAIL"}>
-          <span class="mode-badge">{h.mode || "-"}</span>
-          <span class="date">{new Date(h.date).toLocaleTimeString()}</span>
-          <span class="case"
-            >{h.case
-              .replace("PLL_", "")
-              .replace("OLL_", "")
-              .replace("F2L_", "")}</span
-          >
-          <span class="time">
-            <small style="color: #666; font-size: 0.7rem">
-              ({(h.inspectionTime || 0).toFixed(2)} / {(
-                h.executionTime || 0
-              ).toFixed(2)})
-            </small>
-            {h.time.toFixed(2)}s
-            {#if h.moveCount}
-              <small style="color: #888; margin-left: 0.5rem"
-                >{h.moveCount}mv</small
-              >
-            {/if}
-          </span>
-          <span class="res">{h.result}</span>
-          <button
-            class="del-btn"
-            onclick={() => statsState.deleteEntry(h.date)}
-            aria-label="Delete">×</button
-          >
-        </li>
-      {/each}
-    </ul>
-  </div>
+  {#if showHistory}
+    <div class="history-list">
+      <h3>Recent History ({selectedMode})</h3>
+      <ul>
+        {#each filteredHistory as h}
+          <li class:fail={h.result === "FAIL"}>
+            <span class="mode-badge">{h.mode || "-"}</span>
+            <span class="date">{new Date(h.date).toLocaleTimeString()}</span>
+            <span class="case"
+              >{h.case
+                .replace("PLL_", "")
+                .replace("OLL_", "")
+                .replace("F2L_", "")}</span
+            >
+            <span class="time">
+              <small style="color: #666; font-size: 0.7rem">
+                ({(h.inspectionTime || 0).toFixed(2)} / {(
+                  h.executionTime || 0
+                ).toFixed(2)})
+              </small>
+              {h.time.toFixed(2)}s
+              {#if h.moveCount}
+                <small style="color: #888; margin-left: 0.5rem"
+                  >{h.moveCount}mv</small
+                >
+              {/if}
+            </span>
+            <span class="res">{h.result}</span>
+            <button
+              class="del-btn"
+              onclick={() => statsState.deleteEntry(h.date)}
+              aria-label="Delete">×</button
+            >
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -305,8 +314,8 @@
     color: #eee;
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 60px); /* Fill remaining space exactly */
-    overflow: hidden; /* Prevent container scroll, force inner scroll */
+    height: 100%; /* Height 100% helps parent scroll if needed */
+    overflow: visible; /* Let the global scroll handle it */
     gap: 2rem;
   }
   .header {
@@ -330,6 +339,15 @@
   .back-btn {
     padding: 0.8rem 1.5rem;
     background: #333;
+    border: none;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  .toggle-btn {
+    padding: 0.8rem 1.5rem;
+    background: #34495e;
     border: none;
     color: white;
     border-radius: 6px;
@@ -378,8 +396,6 @@
   }
 
   .history-list {
-    flex-grow: 1;
-    overflow-y: auto;
     background: #181818;
     padding: 1rem;
     border-radius: 8px;

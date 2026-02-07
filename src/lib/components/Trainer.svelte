@@ -28,7 +28,9 @@
     let animFrame: number;
 
     // Game Logic State
-    let mode = $state<"MANUAL" | "BLUETOOTH">("MANUAL");
+    let mode = $state<"MANUAL" | "BLUETOOTH">(
+        import.meta.env.DEV ? "MANUAL" : "BLUETOOTH",
+    );
     // Trainer Mode: PLL, OLL, F2L, LL, LSLL
     // Derived from appState.view usually, but we can pass it in or read it.
     let trainerMode = $derived(appState.view.replace("_TRAINER", "")); // 'PLL', 'OLL', etc.
@@ -1140,10 +1142,14 @@
                         >Manual / Keyboard</button
                     >
                 {/if}
-                <button
-                    class:active={mode === "BLUETOOTH" || trainerMode !== "PLL"}
-                    onclick={() => (mode = "BLUETOOTH")}>Bluetooth Cube</button
-                >
+                {#if import.meta.env.DEV}
+                    <button
+                        class:active={mode === "BLUETOOTH" ||
+                            trainerMode !== "PLL"}
+                        onclick={() => (mode = "BLUETOOTH")}
+                        >Bluetooth Cube</button
+                    >
+                {/if}
             </div>
 
             {#if trainerMode !== "PLL_TIME_ATTACK"}
